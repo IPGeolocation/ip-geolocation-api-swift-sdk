@@ -517,31 +517,26 @@ do {
 
 <details>
 <summary>Can I use this SDK without an API key?</summary>
-
 Only for single lookup with paid-plan request-origin auth. Bulk lookup always requires an API key.
 </details>
 
 <details>
 <summary>Can I request XML and still get typed models?</summary>
-
 No. Typed methods only support JSON. Use `lookupIPGeolocationRaw` or `bulkLookupIPGeolocationRaw` for XML.
 </details>
 
 <details>
 <summary>Why are many response fields optional?</summary>
-
 Optional fields let the SDK preserve omitted fields instead of inventing default values for data the API did not send.
 </details>
 
 <details>
 <summary>Does the SDK support async/await?</summary>
-
 Yes. All request methods are `async throws`. The SDK targets platforms that support Swift Concurrency (macOS 12+, iOS 15+, tvOS 15+, watchOS 8+).
 </details>
 
 <details>
 <summary>Does domain lookup work on the free plan?</summary>
-
 No. Domain lookup is a paid-plan feature.
 </details>
 
