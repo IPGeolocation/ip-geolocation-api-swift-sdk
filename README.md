@@ -1,6 +1,6 @@
 # IPGeolocation Swift SDK
 
-Official Swift SDK for the IPGeolocation.io IP Location API.
+Official Swift SDK for the IPGeolocation.io IP Geolocation API.
 
 Look up IPv4, IPv6, and domains with `/v3/ipgeo` and `/v3/ipgeo-bulk`. Get geolocation, company, ASN, timezone, network, hostname, abuse, user-agent, currency, and security data from one API.
 
@@ -543,6 +543,6 @@ No. Domain lookup is a paid-plan feature.
 ## Links
 
 - Homepage: <https://ipgeolocation.io>
-- IP Location API product page: <https://ipgeolocation.io/ip-location-api.html>
+- IP Geolocation API product page: <https://ipgeolocation.io/ip-location-api.html>
 - Documentation: <https://ipgeolocation.io/documentation/ip-location-api.html>
 - GitHub repository: <https://github.com/IPGeolocation/ip-geolocation-api-swift-sdk>
