@@ -1,4 +1,4 @@
-# IPGeolocation Swift SDK
+# IPGeolocation.io Swift SDK
 
 Official Swift SDK for the IPGeolocation.io IP Geolocation API.
 
@@ -106,7 +106,7 @@ You can also call `lookupIPGeolocation()` with no request object to resolve the 
 
 ## Get Your API Key
 
-Create an IPGeolocation account and copy an API key from your dashboard.
+Create an IPGeolocation.io account and copy an API key from your dashboard.
 
 1. Sign up: <https://app.ipgeolocation.io/signup>
 2. Verify your email if prompted
