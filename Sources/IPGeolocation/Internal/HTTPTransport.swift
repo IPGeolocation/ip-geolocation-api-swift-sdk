@@ -90,6 +90,9 @@ final class URLSessionHTTPTransport: HTTPTransport, @unchecked Sendable {
         do {
             bodyData = try await readBody(bytesSequence: bytesSequence)
         } catch {
+            if error is CancellationError || (error as? URLError)?.code == .cancelled {
+                throw Self.mapTransportError(error, apiKey: apiKey)
+            }
             if !isSuccess {
                 return HTTPResponseData(statusCode: httpResponse.statusCode, body: "", headers: headers)
             }
