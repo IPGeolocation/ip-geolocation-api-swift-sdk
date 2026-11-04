@@ -1,0 +1,54 @@
+name: Swift checks
+
+on:
+  push:
+    branches: [main, 'fix/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: swift-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            xcode: '16.4'
+          - runner: macos-26
+            xcode: '26.6'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_${{ matrix.xcode }}.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - run: swift --version
+      - run: swift test
+      - run: swift build -c release
+
+  apple-platforms:
+    runs-on: macos-26
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Build iOS, tvOS and watchOS
+        run: |
+          for platform in iOS tvOS watchOS; do
+            xcodebuild -scheme IPGeolocation \
+              -destination "generic/platform=$platform" \
+              -derivedDataPath "$RUNNER_TEMP/build-$platform" \
+              CODE_SIGNING_ALLOWED=NO build
+          done

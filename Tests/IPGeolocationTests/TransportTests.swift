@@ -224,6 +224,55 @@ final class TransportTests: XCTestCase {
 
     // MARK: - Helpers
 
+    func test_nonSuccessStatusSurvivesInvalidUTF8OversizeAndReadFailure() async throws {
+        let session = makeStubSession(protocolClasses: [ChunkedStubURLProtocol.self])
+        defer { session.invalidateAndCancel() }
+        let transport = URLSessionHTTPTransport(session: session, maxResponseBodyBytes: 64)
+        let client = IPGeolocationClient(config: try IPGeolocationClientConfig(apiKey: "fixture-key"), transport: transport)
+        defer { client.close() }
+        for status in [302, 400, 401, 403, 413, 429, 500, 503] {
+            for failure in ["invalid-utf8", "oversized", "incomplete"] {
+                ChunkedStubURLProtocol.reset()
+                ChunkedStubURLProtocol.statusCode = status
+                switch failure {
+                case "invalid-utf8": ChunkedStubURLProtocol.chunks = [Data([0xC3, 0x28])]
+                case "oversized": ChunkedStubURLProtocol.chunks = [Data(repeating: 65, count: 65)]
+                default:
+                    ChunkedStubURLProtocol.chunks = [Data("{\"message\":".utf8)]
+                    ChunkedStubURLProtocol.failure = URLError(.networkConnectionLost)
+                }
+                do {
+                    _ = try await client.lookupIPGeolocation()
+                    XCTFail("Expected APIError")
+                } catch let error as APIError {
+                    XCTAssertEqual(error.statusCode, status)
+                    XCTAssertEqual(error.kind, APIErrorFactory.kind(for: status))
+                    XCTAssertEqual(error.message, APIErrorFactory.defaultMessage(for: status))
+                    XCTAssertNil(error.apiMessage)
+                } catch { XCTFail("Unexpected error type for \(failure)") }
+            }
+        }
+    }
+
+    func test_requestKeyIsHiddenInURLSessionFailureDetails() async throws {
+        let session = makeStubSession(protocolClasses: [ChunkedStubURLProtocol.self])
+        defer { session.invalidateAndCancel() }
+        let transport = URLSessionHTTPTransport(session: session, maxResponseBodyBytes: 64)
+        let key = "fixture-secret-value"
+        ChunkedStubURLProtocol.failure = URLError(.networkConnectionLost, userInfo: [
+            NSLocalizedDescriptionKey: "Failed for \(key)",
+            NSDebugDescriptionErrorKey: "Request \(key)",
+            "payload": ["key": key],
+        ])
+        do {
+            _ = try await transport.send(HTTPRequestData(url: URL(string: "https://example.test/?apiKey=\(key)")!, method: "GET", headers: [:], body: nil))
+            XCTFail("Expected TransportError")
+        } catch let error as TransportError {
+            XCTAssertFalse(String(describing: error.underlyingError).contains(key))
+            XCTAssertEqual((error.underlyingError as NSError?)?.code, URLError.networkConnectionLost.rawValue)
+        }
+    }
+
     private func makeStubSession(
         protocolClasses: [AnyClass],
         requestTimeout: TimeInterval = 30,
@@ -243,12 +292,14 @@ final class ChunkedStubURLProtocol: URLProtocol, @unchecked Sendable {
     static var statusCode: Int = 200
     static var headers: [String: String] = [:]
     static var chunks: [Data] = []
+    static var failure: Error?
     static var chunksDelivered: Int = 0
 
     static func reset() {
         statusCode = 200
         headers = [:]
         chunks = []
+        failure = nil
         chunksDelivered = 0
     }
 
@@ -275,7 +326,8 @@ final class ChunkedStubURLProtocol: URLProtocol, @unchecked Sendable {
         }
 
         if !cancelled {
-            client.urlProtocolDidFinishLoading(self)
+            if let error = Self.failure { client.urlProtocol(self, didFailWithError: error) }
+            else { client.urlProtocolDidFinishLoading(self) }
         }
     }
 

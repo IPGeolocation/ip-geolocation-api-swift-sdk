@@ -1,8 +1,8 @@
 import Foundation
 
 enum ResponseMapper {
-    static func parseSingle(_ body: String) throws -> IPGeolocationResponse {
-        let object = try decodeObject(body, context: "single lookup response body")
+    static func parseSingle(_ body: String, apiKey: String? = nil) throws -> IPGeolocationResponse {
+        let object = try decodeObject(body, context: "single lookup response body", apiKey: apiKey)
         return parseResponse(object)
     }
 
@@ -15,7 +15,8 @@ enum ResponseMapper {
         do {
             parsed = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
         } catch {
-            throw SerializationError("Failed to parse bulk lookup response body", underlyingError: error)
+            throw SerializationError("Failed to parse bulk lookup response body",
+                                     underlyingError: ErrorSanitizer.copyUnderlying(error, apiKey: apiKey))
         }
 
         guard let items = parsed as? [Any] else {
@@ -268,7 +269,7 @@ enum ResponseMapper {
         return value
     }
 
-    static func decodeObject(_ body: String, context: String) throws -> [String: Any] {
+    static func decodeObject(_ body: String, context: String, apiKey: String? = nil) throws -> [String: Any] {
         guard let data = body.data(using: .utf8) else {
             throw SerializationError("Failed to parse \(context)")
         }
@@ -277,7 +278,8 @@ enum ResponseMapper {
         do {
             parsed = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
         } catch {
-            throw SerializationError("Failed to parse \(context)", underlyingError: error)
+            throw SerializationError("Failed to parse \(context)",
+                                     underlyingError: ErrorSanitizer.copyUnderlying(error, apiKey: apiKey))
         }
 
         guard let object = parsed as? [String: Any] else {
