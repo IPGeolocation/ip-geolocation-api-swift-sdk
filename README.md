@@ -37,7 +37,7 @@ Swift Package Manifest:
 ```swift
 .package(
     url: "https://github.com/IPGeolocation/ip-geolocation-api-swift-sdk.git",
-    from: "1.0.0"
+    from: "1.0.1"
 )
 ```
 
@@ -99,7 +99,7 @@ You can also call `lookupIPGeolocation()` with no request object to resolve the 
 | Supported Endpoints | `/v3/ipgeo`, `/v3/ipgeo-bulk` |
 | Supported Inputs | IPv4, IPv6, domain |
 | Main Data Returned | Geolocation, company, ASN, time zone, network, hostname, abuse, user-agent, currency, security |
-| Authentication | API key, request-origin auth for `/v3/ipgeo` only |
+| Authentication | API key |
 | Response Formats | Typed JSON, raw JSON, raw XML |
 | Bulk Limit | Up to 50,000 IPs or domains per request |
 | Transport | Foundation `URLSession` |
@@ -203,12 +203,19 @@ Config values are validated when the config is built. The initializer throws `Va
 | `ip` | Single lookup | IPv4, IPv6, or domain. Leave it `nil` for caller IP lookup. |
 | `ips` | Bulk lookup | Array of 1 to 50,000 IPs or domains. |
 | `lang` | Single and bulk | `Language.en`, `.de`, `.ru`, `.ja`, `.fr`, `.cn`, `.es`, `.cs`, `.it`, `.ko`, `.fa`, `.pt`. |
+| `languageCode` | Single and bulk | A language code such as `"ar"` for Arabic. Accepts the same codes as `lang`, plus `ar`. If both are set, `languageCode` is used. |
 | `include` | Single and bulk | Array of module names such as `security`, `abuse`, `user_agent`, `hostname`, `liveHostname`, `hostnameFallbackLive`, `geo_accuracy`, `dma_code`, or `*`. |
 | `fields` | Single and bulk | Array of field paths to keep, for example `location.country_name` or `security.threat_score`. |
 | `excludes` | Single and bulk | Array of field paths to remove from the response. |
 | `userAgent` | Single and bulk | Overrides the outbound `User-Agent` header. |
 | `headers` | Single and bulk | Extra request headers. Header names are normalized to canonical case. |
 | `output` | Single and bulk | `.json` or `.xml`. Typed methods require `.json`. |
+
+```swift
+var request = LookupIPGeolocationRequest(ip: "8.8.8.8")
+request.languageCode = "ar"
+let response = try await client.lookupIPGeolocation(request)
+```
 
 ## JSON Keys and Swift Names
 
@@ -473,7 +480,7 @@ print(full)
 
 ## Errors
 
-All SDK errors conform to the `IPGeolocationError` protocol.
+All SDK errors conform to the `IPGeolocationError` protocol. If a request error includes your configured API key, the SDK replaces it with `[REDACTED]`. HTTP errors keep their status code even when the error response cannot be read. Some error details may be shortened to keep the key hidden.
 
 | Error Type | When it happens |
 |------------|-----------------|

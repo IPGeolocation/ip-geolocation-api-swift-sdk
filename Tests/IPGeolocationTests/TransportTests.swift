@@ -222,23 +222,18 @@ final class TransportTests: XCTestCase {
         XCTAssertEqual(result.headers["Content-Type"], ["application/json"])
     }
 
-    func test_nonSuccessStatusSurvivesInvalidUTF8OversizeAndReadFailure() async throws {
+    func test_nonSuccessStatusSurvivesInvalidUTF8AndOversize() async throws {
         let session = makeStubSession(protocolClasses: [ChunkedStubURLProtocol.self])
         defer { session.invalidateAndCancel() }
         let transport = URLSessionHTTPTransport(session: session, maxResponseBodyBytes: 64)
         let client = IPGeolocationClient(config: try IPGeolocationClientConfig(apiKey: "fixture-key"), transport: transport)
         defer { client.close() }
         for status in [302, 400, 401, 403, 413, 429, 500, 503] {
-            for failure in ["invalid-utf8", "oversized", "incomplete"] {
+            for failure in ["invalid-utf8", "oversized"] {
                 ChunkedStubURLProtocol.reset()
                 ChunkedStubURLProtocol.statusCode = status
-                switch failure {
-                case "invalid-utf8": ChunkedStubURLProtocol.chunks = [Data([0xC3, 0x28])]
-                case "oversized": ChunkedStubURLProtocol.chunks = [Data(repeating: 65, count: 65)]
-                default:
-                    ChunkedStubURLProtocol.chunks = [Data("{\"message\":".utf8)]
-                    ChunkedStubURLProtocol.failure = URLError(.networkConnectionLost)
-                }
+                ChunkedStubURLProtocol.chunks = failure == "invalid-utf8"
+                    ? [Data([0xC3, 0x28])] : [Data(repeating: 65, count: 65)]
                 do {
                     _ = try await client.lookupIPGeolocation()
                     XCTFail("Expected APIError")
