@@ -144,7 +144,6 @@ Feature availability depends on your plan and request parameters.
 | Domain lookup | Not supported | Supported |
 | Bulk lookup | Not supported | Supported |
 | Non-English `lang` | Not supported | Supported |
-| Request-origin auth | Not supported | Supported for `/v3/ipgeo` only |
 | Optional modules via `include` | Not supported | Supported |
 | `include: ["*"]` | Base response only | All plan-available modules |
 
@@ -154,8 +153,7 @@ Paid plans still need `include` for optional modules. `fields` and `excludes` on
 
 | Field | Type | Default | Notes |
 |-------|------|---------|-------|
-| `apiKey` | `String?` | unset | Required for bulk lookup. Optional for single lookup if `requestOrigin` is set. |
-| `requestOrigin` | `String?` | unset | Must be an absolute `http` or `https` origin with no path, query string, fragment, or userinfo. |
+| `apiKey` | `String?` | unset | Your IPGeolocation.io API key. |
 | `baseURL` | `String` | `https://api.ipgeolocation.io` | Override the API base URL. |
 | `requestTimeout` | `TimeInterval` | `10` | Maximum time `URLSession` will wait for new data on an in-flight request (connect, headers, or inter-chunk body inactivity). Must be greater than zero and less than or equal to `resourceTimeout`. Maps to `URLSessionConfiguration.timeoutIntervalForRequest`. |
 | `resourceTimeout` | `TimeInterval` | `30` | Maximum total time for the entire request. Must be greater than zero. Maps to `URLSessionConfiguration.timeoutIntervalForResource`. |
@@ -495,21 +493,15 @@ do {
 
 ## Troubleshooting
 
-- Bulk lookup always requires `apiKey`. `requestOrigin` is not enough.
+- Set `apiKey` before making a lookup.
 - Typed methods only support JSON. Use the raw methods for XML.
 - If you need security, abuse, user-agent, or hostname data, include those modules explicitly.
 - `fields` and `excludes` filter the response. They do not unlock paid data.
-- `requestOrigin` must be an origin only. Do not include a path, query string, fragment, or userinfo.
 - Response fields are optional so omitted fields stay omitted.
 - `requestTimeout` must be less than or equal to `resourceTimeout`.
 - The SDK rejects responses larger than `maxResponseBodyBytes`. The default cap is `32 MiB`.
 
 ## Frequently Asked Questions
-
-<details>
-<summary>Can I use this SDK without an API key?</summary>
-Only for single lookup with paid-plan request-origin auth. Bulk lookup always requires an API key.
-</details>
 
 <details>
 <summary>Can I request XML and still get typed models?</summary>
