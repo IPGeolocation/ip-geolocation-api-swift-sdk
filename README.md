@@ -114,7 +114,7 @@ Create an IPGeolocation.io account and copy an API key from your dashboard.
 4. Open your dashboard: <https://app.ipgeolocation.io/dashboard>
 5. Copy an API key from the `API Keys` section
 
-For server-side Swift code, keep the API key in an environment variable or a secret manager. For browser-based single lookups on paid plans, use request-origin auth instead of exposing an API key in frontend code.
+For server-side Swift code, keep the API key in an environment variable or a secret manager.
 
 ## Authentication
 
@@ -132,23 +132,7 @@ let client = IPGeolocationClient(
 
 If `IPGEO_API_KEY` is missing, `IPGeolocationClientConfig` throws `ValidationError("apiKey must not be blank")` so the failure stays typed instead of crashing the host app.
 
-### Request-Origin Auth
-
-```swift
-let client = IPGeolocationClient(
-    config: try IPGeolocationClientConfig(
-        requestOrigin: "https://app.example.com"
-    )
-)
-```
-
-`requestOrigin` must be an absolute `http` or `https` origin with no path, query string, fragment, or userinfo.
-
-> [!IMPORTANT]
-> Request-origin auth does not work with `/v3/ipgeo-bulk`. Bulk lookup always requires `apiKey`.
-
-> [!NOTE]
-> If you set both `apiKey` and `requestOrigin`, single lookup still uses the API key. The API key is sent as the `apiKey` query parameter, so avoid logging full request URLs.
+The API key is sent as the `apiKey` query parameter, so avoid logging full request URLs.
 
 ## Plan Behavior
 
@@ -175,7 +159,7 @@ Paid plans still need `include` for optional modules. `fields` and `excludes` on
 | `baseURL` | `String` | `https://api.ipgeolocation.io` | Override the API base URL. |
 | `requestTimeout` | `TimeInterval` | `10` | Maximum time `URLSession` will wait for new data on an in-flight request (connect, headers, or inter-chunk body inactivity). Must be greater than zero and less than or equal to `resourceTimeout`. Maps to `URLSessionConfiguration.timeoutIntervalForRequest`. |
 | `resourceTimeout` | `TimeInterval` | `30` | Maximum total time for the entire request. Must be greater than zero. Maps to `URLSessionConfiguration.timeoutIntervalForResource`. |
-| `maxResponseBodyBytes` | `Int` | `33554432` | Maximum response body size. The SDK enforces this while streaming the body and throws `TransportError` as soon as the limit is exceeded. Must be greater than zero. |
+| `maxResponseBodyBytes` | `Int` | `33554432` | Maximum response size, in bytes. If a response is too large, the SDK stops reading it. API errors keep their status code. Must be greater than zero. |
 | `allowInsecureHTTP` | `Bool` | `false` | Off by default. The SDK sends `apiKey` in the query string, so `http://` would transmit it in plaintext. Set to `true` only for local testing or a trusted proxy where you have accepted the risk. |
 
 Config values are validated when the config is built. The initializer throws `ValidationError` on invalid input. Request values are validated before each request is sent.
