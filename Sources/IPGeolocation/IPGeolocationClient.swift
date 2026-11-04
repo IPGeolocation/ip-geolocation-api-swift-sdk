@@ -58,7 +58,7 @@ public final class IPGeolocationClient: @unchecked Sendable {
         let data = try buildLookupHTTPRequest(normalized)
         let execution = try await executeWithMetrics(data)
         try ensureSuccessfulStatus(execution.response)
-        let parsed = try ResponseMapper.parseSingle(execution.response.body)
+        let parsed = try ResponseMapper.parseSingle(execution.response.body, apiKey: config.apiKey)
         return APIResponse(data: parsed, metadata: metadata(from: execution))
     }
 
@@ -132,7 +132,8 @@ public final class IPGeolocationClient: @unchecked Sendable {
         do {
             body = try JSONSerialization.data(withJSONObject: bodyObject, options: [])
         } catch {
-            throw SerializationError("Failed to serialize bulk lookup request body", underlyingError: error)
+            throw SerializationError("Failed to serialize bulk lookup request body",
+                                     underlyingError: ErrorSanitizer.copyUnderlying(error, apiKey: config.apiKey))
         }
 
         let query = QueryBuilder.build([

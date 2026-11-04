@@ -62,14 +62,14 @@ final class LiveIntegrationTests: XCTestCase {
         XCTAssertNil(response.data.hostname, "free plan include=* must not surface hostname")
     }
 
-    func test_live_freeKeyBulkLookupRejected() async throws {
-        let keys = try LiveTestGuard.requireLiveTests()
-        let client = IPGeolocationClient(config: try IPGeolocationClientConfig(apiKey: keys.freeKey))
+    func test_live_invalidKeyBulkLookupRejected() async throws {
+        _ = try LiveTestGuard.requireLiveTests()
+        let client = IPGeolocationClient(config: try IPGeolocationClientConfig(apiKey: "invalid-fixture-key"))
         defer { client.close() }
 
         do {
             _ = try await client.bulkLookupIPGeolocation(BulkLookupIPGeolocationRequest(ips: ["8.8.8.8"]))
-            XCTFail("expected APIError for free-plan bulk")
+            XCTFail("expected APIError for invalid credentials")
         } catch let error as APIError {
             XCTAssertEqual(error.statusCode, 401)
             XCTAssertEqual(error.kind, .unauthorized)

@@ -37,7 +37,7 @@ Swift Package Manifest:
 ```swift
 .package(
     url: "https://github.com/IPGeolocation/ip-geolocation-api-swift-sdk.git",
-    from: "1.0.0"
+    from: "1.0.1"
 )
 ```
 
@@ -99,7 +99,7 @@ You can also call `lookupIPGeolocation()` with no request object to resolve the 
 | Supported Endpoints | `/v3/ipgeo`, `/v3/ipgeo-bulk` |
 | Supported Inputs | IPv4, IPv6, domain |
 | Main Data Returned | Geolocation, company, ASN, time zone, network, hostname, abuse, user-agent, currency, security |
-| Authentication | API key, request-origin auth for `/v3/ipgeo` only |
+| Authentication | API key |
 | Response Formats | Typed JSON, raw JSON, raw XML |
 | Bulk Limit | Up to 50,000 IPs or domains per request |
 | Transport | Foundation `URLSession` |
@@ -114,7 +114,7 @@ Create an IPGeolocation.io account and copy an API key from your dashboard.
 4. Open your dashboard: <https://app.ipgeolocation.io/dashboard>
 5. Copy an API key from the `API Keys` section
 
-For server-side Swift code, keep the API key in an environment variable or a secret manager. For browser-based single lookups on paid plans, use request-origin auth instead of exposing an API key in frontend code.
+For server-side Swift code, keep the API key in an environment variable or a secret manager.
 
 ## Authentication
 
@@ -132,23 +132,7 @@ let client = IPGeolocationClient(
 
 If `IPGEO_API_KEY` is missing, `IPGeolocationClientConfig` throws `ValidationError("apiKey must not be blank")` so the failure stays typed instead of crashing the host app.
 
-### Request-Origin Auth
-
-```swift
-let client = IPGeolocationClient(
-    config: try IPGeolocationClientConfig(
-        requestOrigin: "https://app.example.com"
-    )
-)
-```
-
-`requestOrigin` must be an absolute `http` or `https` origin with no path, query string, fragment, or userinfo.
-
-> [!IMPORTANT]
-> Request-origin auth does not work with `/v3/ipgeo-bulk`. Bulk lookup always requires `apiKey`.
-
-> [!NOTE]
-> If you set both `apiKey` and `requestOrigin`, single lookup still uses the API key. The API key is sent as the `apiKey` query parameter, so avoid logging full request URLs.
+The API key is sent as the `apiKey` query parameter, so avoid logging full request URLs.
 
 ## Plan Behavior
 
@@ -160,7 +144,6 @@ Feature availability depends on your plan and request parameters.
 | Domain lookup | Not supported | Supported |
 | Bulk lookup | Not supported | Supported |
 | Non-English `lang` | Not supported | Supported |
-| Request-origin auth | Not supported | Supported for `/v3/ipgeo` only |
 | Optional modules via `include` | Not supported | Supported |
 | `include: ["*"]` | Base response only | All plan-available modules |
 
@@ -170,12 +153,11 @@ Paid plans still need `include` for optional modules. `fields` and `excludes` on
 
 | Field | Type | Default | Notes |
 |-------|------|---------|-------|
-| `apiKey` | `String?` | unset | Required for bulk lookup. Optional for single lookup if `requestOrigin` is set. |
-| `requestOrigin` | `String?` | unset | Must be an absolute `http` or `https` origin with no path, query string, fragment, or userinfo. |
+| `apiKey` | `String?` | unset | Your IPGeolocation.io API key. |
 | `baseURL` | `String` | `https://api.ipgeolocation.io` | Override the API base URL. |
 | `requestTimeout` | `TimeInterval` | `10` | Maximum time `URLSession` will wait for new data on an in-flight request (connect, headers, or inter-chunk body inactivity). Must be greater than zero and less than or equal to `resourceTimeout`. Maps to `URLSessionConfiguration.timeoutIntervalForRequest`. |
 | `resourceTimeout` | `TimeInterval` | `30` | Maximum total time for the entire request. Must be greater than zero. Maps to `URLSessionConfiguration.timeoutIntervalForResource`. |
-| `maxResponseBodyBytes` | `Int` | `33554432` | Maximum response body size. The SDK enforces this while streaming the body and throws `TransportError` as soon as the limit is exceeded. Must be greater than zero. |
+| `maxResponseBodyBytes` | `Int` | `33554432` | Maximum response size, in bytes. If a response is too large, the SDK stops reading it. API errors keep their status code. Must be greater than zero. |
 | `allowInsecureHTTP` | `Bool` | `false` | Off by default. The SDK sends `apiKey` in the query string, so `http://` would transmit it in plaintext. Set to `true` only for local testing or a trusted proxy where you have accepted the risk. |
 
 Config values are validated when the config is built. The initializer throws `ValidationError` on invalid input. Request values are validated before each request is sent.
@@ -203,12 +185,19 @@ Config values are validated when the config is built. The initializer throws `Va
 | `ip` | Single lookup | IPv4, IPv6, or domain. Leave it `nil` for caller IP lookup. |
 | `ips` | Bulk lookup | Array of 1 to 50,000 IPs or domains. |
 | `lang` | Single and bulk | `Language.en`, `.de`, `.ru`, `.ja`, `.fr`, `.cn`, `.es`, `.cs`, `.it`, `.ko`, `.fa`, `.pt`. |
+| `languageCode` | Single and bulk | A language code such as `"ar"` for Arabic. Accepts the same codes as `lang`, plus `ar`. If both are set, `languageCode` is used. |
 | `include` | Single and bulk | Array of module names such as `security`, `abuse`, `user_agent`, `hostname`, `liveHostname`, `hostnameFallbackLive`, `geo_accuracy`, `dma_code`, or `*`. |
 | `fields` | Single and bulk | Array of field paths to keep, for example `location.country_name` or `security.threat_score`. |
 | `excludes` | Single and bulk | Array of field paths to remove from the response. |
 | `userAgent` | Single and bulk | Overrides the outbound `User-Agent` header. |
 | `headers` | Single and bulk | Extra request headers. Header names are normalized to canonical case. |
 | `output` | Single and bulk | `.json` or `.xml`. Typed methods require `.json`. |
+
+```swift
+var request = LookupIPGeolocationRequest(ip: "8.8.8.8")
+request.languageCode = "ar"
+let response = try await client.lookupIPGeolocation(request)
+```
 
 ## JSON Keys and Swift Names
 
@@ -473,7 +462,7 @@ print(full)
 
 ## Errors
 
-All SDK errors conform to the `IPGeolocationError` protocol.
+All SDK errors conform to the `IPGeolocationError` protocol. If a request error includes your configured API key, the SDK replaces it with `[REDACTED]`. HTTP errors keep their status code even when the error response cannot be read. Some error details may be shortened to keep the key hidden.
 
 | Error Type | When it happens |
 |------------|-----------------|
@@ -504,21 +493,15 @@ do {
 
 ## Troubleshooting
 
-- Bulk lookup always requires `apiKey`. `requestOrigin` is not enough.
+- Set `apiKey` before making a lookup.
 - Typed methods only support JSON. Use the raw methods for XML.
 - If you need security, abuse, user-agent, or hostname data, include those modules explicitly.
 - `fields` and `excludes` filter the response. They do not unlock paid data.
-- `requestOrigin` must be an origin only. Do not include a path, query string, fragment, or userinfo.
 - Response fields are optional so omitted fields stay omitted.
 - `requestTimeout` must be less than or equal to `resourceTimeout`.
 - The SDK rejects responses larger than `maxResponseBodyBytes`. The default cap is `32 MiB`.
 
 ## Frequently Asked Questions
-
-<details>
-<summary>Can I use this SDK without an API key?</summary>
-Only for single lookup with paid-plan request-origin auth. Bulk lookup always requires an API key.
-</details>
 
 <details>
 <summary>Can I request XML and still get typed models?</summary>

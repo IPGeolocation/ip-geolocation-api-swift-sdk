@@ -76,6 +76,27 @@ public struct APIError: IPGeolocationError, Equatable {
     }
 }
 
+enum ErrorSanitizer {
+    static func copyUnderlying(_ error: Error, apiKey: String?, depth: Int = 0) -> NSError {
+        let source = error as NSError
+        var details: [String: Any] = [:]
+        for key in [NSLocalizedDescriptionKey, NSLocalizedFailureReasonErrorKey,
+                    NSLocalizedRecoverySuggestionErrorKey, NSDebugDescriptionErrorKey] {
+            if let value = source.userInfo[key] as? String {
+                details[key] = finalizeAPIMessage(value, apiKey: apiKey)
+            }
+        }
+        if depth < 8, let nested = source.userInfo[NSUnderlyingErrorKey] as? Error {
+            details[NSUnderlyingErrorKey] = copyUnderlying(nested, apiKey: apiKey, depth: depth + 1)
+        }
+        return NSError(
+            domain: finalizeAPIMessage(source.domain, apiKey: apiKey),
+            code: source.code,
+            userInfo: details
+        )
+    }
+}
+
 enum APIErrorFactory {
     static func make(statusCode: Int, body: String, apiKey: String? = nil) -> APIError {
         let extracted = extractAPIMessage(from: body, apiKey: apiKey)

@@ -2,6 +2,15 @@
 
 All notable changes to the Swift SDK for the IPGeolocation.io IP Location API are recorded here.
 
+## 1.0.1
+
+- Hide API keys in request error details.
+- Preserve HTTP error status codes when error responses are unreadable or incomplete.
+- Add Arabic (`ar`) through the `languageCode` request option.
+- Add automated tests and Apple-platform build checks.
+
+Existing methods, initializers, language enum values and minimum platform versions remain unchanged.
+
 ## 1.0.0
 
 First public release.

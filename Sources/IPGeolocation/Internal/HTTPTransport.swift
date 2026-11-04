@@ -63,6 +63,8 @@ final class URLSessionHTTPTransport: HTTPTransport, @unchecked Sendable {
     }
 
     func send(_ request: HTTPRequestData) async throws -> HTTPResponseData {
+        let apiKey = URLComponents(url: request.url, resolvingAgainstBaseURL: false)?
+            .queryItems?.first(where: { $0.name == "apiKey" })?.value
         var urlRequest = URLRequest(url: request.url)
         urlRequest.httpMethod = request.method
         urlRequest.httpBody = request.body
@@ -75,7 +77,7 @@ final class URLSessionHTTPTransport: HTTPTransport, @unchecked Sendable {
         do {
             (bytesSequence, response) = try await session.bytes(for: urlRequest)
         } catch {
-            throw Self.mapTransportError(error)
+            throw Self.mapTransportError(error, apiKey: apiKey)
         }
 
         guard let httpResponse = response as? HTTPURLResponse else {
@@ -83,18 +85,25 @@ final class URLSessionHTTPTransport: HTTPTransport, @unchecked Sendable {
         }
 
         let headers = normalizeHeaders(httpResponse)
+        let isSuccess = (200...299).contains(httpResponse.statusCode)
         let bodyData: Data
         do {
             bodyData = try await readBody(bytesSequence: bytesSequence)
-        } catch let error as TransportError {
-            throw error
-        } catch let error as RequestTimeoutError {
-            throw error
         } catch {
-            throw Self.mapTransportError(error)
+            if error is CancellationError || (error as? URLError)?.code == .cancelled {
+                throw Self.mapTransportError(error, apiKey: apiKey)
+            }
+            if !isSuccess {
+                return HTTPResponseData(statusCode: httpResponse.statusCode, body: "", headers: headers)
+            }
+            if error is TransportError || error is RequestTimeoutError { throw error }
+            throw Self.mapTransportError(error, apiKey: apiKey)
         }
 
         guard let bodyString = String(data: bodyData, encoding: .utf8) else {
+            if !isSuccess {
+                return HTTPResponseData(statusCode: httpResponse.statusCode, body: "", headers: headers)
+            }
             throw SerializationError("Response body was not valid UTF-8")
         }
 
@@ -142,8 +151,8 @@ final class URLSessionHTTPTransport: HTTPTransport, @unchecked Sendable {
     /// type. Previously only `URLError` was sanitized; bare `NSError` and
     /// Swift errors bridged through NSError would slip through with the
     /// full request URL (including the `apiKey` query) attached.
-    static func mapTransportError(_ error: Error) -> Error {
-        let sanitized = sanitizedUnderlyingError(from: error)
+    static func mapTransportError(_ error: Error, apiKey: String? = nil) -> Error {
+        let sanitized = sanitizedUnderlyingError(from: error, apiKey: apiKey)
         if let urlError = error as? URLError {
             switch urlError.code {
             case .timedOut:
@@ -162,41 +171,9 @@ final class URLSessionHTTPTransport: HTTPTransport, @unchecked Sendable {
     /// consumers may log verbatim. Handles `URLError` and any other Error
     /// that bridges to `NSError` (which is every Swift error on Apple
     /// platforms). Recursively sanitizes nested underlying errors.
-    static func sanitizedUnderlyingError(from error: Error) -> Error {
-        let nsError = error as NSError
-        var userInfo = nsError.userInfo
-        var changed = false
-
-        for key in urlBearingUserInfoKeys {
-            if userInfo.removeValue(forKey: key) != nil {
-                changed = true
-            }
-        }
-
-        if let nested = userInfo[NSUnderlyingErrorKey] as? Error {
-            let nestedSanitized = sanitizedUnderlyingError(from: nested)
-            userInfo[NSUnderlyingErrorKey] = nestedSanitized
-            changed = true
-        } else if userInfo.removeValue(forKey: NSUnderlyingErrorKey) != nil {
-            changed = true
-        }
-
-        if !changed { return error }
-
-        return NSError(
-            domain: nsError.domain,
-            code: nsError.code,
-            userInfo: userInfo
-        )
+    static func sanitizedUnderlyingError(from error: Error, apiKey: String? = nil) -> Error {
+        ErrorSanitizer.copyUnderlying(error, apiKey: apiKey)
     }
-
-    private static let urlBearingUserInfoKeys: [String] = [
-        NSURLErrorFailingURLErrorKey,
-        NSURLErrorFailingURLStringErrorKey,
-        NSURLErrorFailingURLPeerTrustErrorKey,
-        "NSErrorFailingURLKey",
-        "NSErrorFailingURLStringKey",
-    ]
 }
 
 /// `URLSessionTaskDelegate` that rejects every HTTP redirect. The client

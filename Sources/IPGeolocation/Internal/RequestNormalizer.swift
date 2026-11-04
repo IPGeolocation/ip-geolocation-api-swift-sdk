@@ -28,7 +28,7 @@ enum RequestNormalizer {
     static func normalizeLookup(_ request: LookupIPGeolocationRequest) throws -> NormalizedLookupRequest {
         NormalizedLookupRequest(
             ip: try normalizeIP(request.ip),
-            lang: request.lang?.code,
+            lang: try normalizeLanguageCode(request.languageCode) ?? request.lang?.code,
             include: try normalizeTokenList(request.include, fieldName: "include"),
             fields: try normalizeTokenList(request.fields, fieldName: "fields"),
             excludes: try normalizeTokenList(request.excludes, fieldName: "excludes"),
@@ -61,7 +61,7 @@ enum RequestNormalizer {
 
         return NormalizedBulkLookupRequest(
             ips: normalizedIPs,
-            lang: request.lang?.code,
+            lang: try normalizeLanguageCode(request.languageCode) ?? request.lang?.code,
             include: try normalizeTokenList(request.include, fieldName: "include"),
             fields: try normalizeTokenList(request.fields, fieldName: "fields"),
             excludes: try normalizeTokenList(request.excludes, fieldName: "excludes"),
@@ -69,6 +69,14 @@ enum RequestNormalizer {
             headers: try normalizeHeaders(request.headers),
             output: request.output
         )
+    }
+
+    static func normalizeLanguageCode(_ value: String?) throws -> String? {
+        guard let value else { return nil }
+        guard value == "ar" || Language(rawValue: value) != nil else {
+            throw ValidationError("languageCode must be a supported language code")
+        }
+        return value
     }
 
     static func normalizeIP(_ value: String?) throws -> String? {

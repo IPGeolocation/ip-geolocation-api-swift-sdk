@@ -3,6 +3,7 @@ import Foundation
 public struct LookupIPGeolocationRequest: Sendable {
     public var ip: String?
     public var lang: Language?
+    public var languageCode: String? = nil
     public var include: [String]
     public var fields: [String]
     public var excludes: [String]
@@ -38,6 +39,7 @@ public struct LookupIPGeolocationRequest: Sendable {
 public struct BulkLookupIPGeolocationRequest: Sendable {
     public var ips: [String]
     public var lang: Language?
+    public var languageCode: String? = nil
     public var include: [String]
     public var fields: [String]
     public var excludes: [String]

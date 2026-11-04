@@ -222,6 +222,85 @@ final class TransportTests: XCTestCase {
         XCTAssertEqual(result.headers["Content-Type"], ["application/json"])
     }
 
+    func test_nonSuccessStatusSurvivesInvalidUTF8AndOversize() async throws {
+        let session = makeStubSession(protocolClasses: [ChunkedStubURLProtocol.self])
+        defer { session.invalidateAndCancel() }
+        let transport = URLSessionHTTPTransport(session: session, maxResponseBodyBytes: 64)
+        let client = IPGeolocationClient(config: try IPGeolocationClientConfig(apiKey: "fixture-key"), transport: transport)
+        defer { client.close() }
+        for status in [302, 400, 401, 403, 413, 429, 500, 503] {
+            for failure in ["invalid-utf8", "oversized"] {
+                ChunkedStubURLProtocol.reset()
+                ChunkedStubURLProtocol.statusCode = status
+                ChunkedStubURLProtocol.chunks = failure == "invalid-utf8"
+                    ? [Data([0xC3, 0x28])] : [Data(repeating: 65, count: 65)]
+                do {
+                    _ = try await client.lookupIPGeolocation()
+                    XCTFail("Expected APIError")
+                } catch let error as APIError {
+                    XCTAssertEqual(error.statusCode, status)
+                    XCTAssertEqual(error.kind, APIErrorFactory.kind(for: status))
+                    XCTAssertEqual(error.message, APIErrorFactory.defaultMessage(for: status))
+                    XCTAssertNil(error.apiMessage)
+                } catch { XCTFail("Unexpected error type for \(failure)") }
+            }
+        }
+    }
+
+    func test_requestKeyIsHiddenInURLSessionFailureDetails() async throws {
+        let session = makeStubSession(protocolClasses: [ChunkedStubURLProtocol.self])
+        defer { session.invalidateAndCancel() }
+        let transport = URLSessionHTTPTransport(session: session, maxResponseBodyBytes: 64)
+        let key = "fixture-secret-value"
+        ChunkedStubURLProtocol.failure = URLError(.networkConnectionLost, userInfo: [
+            NSLocalizedDescriptionKey: "Failed for \(key)",
+            NSDebugDescriptionErrorKey: "Request \(key)",
+            "payload": ["key": key],
+        ])
+        do {
+            _ = try await transport.send(HTTPRequestData(url: URL(string: "https://example.test/?apiKey=\(key)")!, method: "GET", headers: [:], body: nil))
+            XCTFail("Expected TransportError")
+        } catch let error as TransportError {
+            XCTAssertFalse(String(describing: error.underlyingError).contains(key))
+            XCTAssertEqual((error.underlyingError as NSError?)?.code, URLError.networkConnectionLost.rawValue)
+        }
+    }
+
+    func test_cancellationAfterErrorHeadersRemainsTransportError() async throws {
+        let session = makeStubSession(protocolClasses: [ChunkedStubURLProtocol.self])
+        defer { session.invalidateAndCancel() }
+        let transport = URLSessionHTTPTransport(session: session, maxResponseBodyBytes: 64)
+        ChunkedStubURLProtocol.statusCode = 429
+        ChunkedStubURLProtocol.chunks = [Data("{".utf8)]
+        ChunkedStubURLProtocol.failure = URLError(.cancelled)
+        do {
+            _ = try await transport.send(HTTPRequestData(url: URL(string: "https://example.test/")!, method: "GET", headers: [:], body: nil))
+            XCTFail("Expected cancellation")
+        } catch let error as TransportError {
+            XCTAssertEqual((error.underlyingError as NSError?)?.code, URLError.cancelled.rawValue)
+        }
+    }
+
+    func test_taskCancellationKeepsTransportErrorForSuccessAndErrorHeaders() async throws {
+        for status in [200, 429] {
+            let session = makeStubSession(protocolClasses: [BlockingStubURLProtocol.self])
+            defer { session.invalidateAndCancel() }
+            let transport = URLSessionHTTPTransport(session: session, maxResponseBodyBytes: 64)
+            BlockingStubURLProtocol.statusCode = status
+            let task = Task {
+                try await transport.send(HTTPRequestData(url: URL(string: "https://example.test/")!, method: "GET", headers: [:], body: nil))
+            }
+            try await Task.sleep(nanoseconds: 50_000_000)
+            task.cancel()
+            do {
+                _ = try await task.value
+                XCTFail("Expected cancellation")
+            } catch let error as TransportError {
+                XCTAssertEqual((error.underlyingError as NSError?)?.code, URLError.cancelled.rawValue)
+            }
+        }
+    }
+
     // MARK: - Helpers
 
     private func makeStubSession(
@@ -243,44 +322,71 @@ final class ChunkedStubURLProtocol: URLProtocol, @unchecked Sendable {
     static var statusCode: Int = 200
     static var headers: [String: String] = [:]
     static var chunks: [Data] = []
-    static var chunksDelivered: Int = 0
+    static var failure: Error?
+    private static let deliveryLock = NSLock()
+    private static var delivered = 0
+    static var chunksDelivered: Int {
+        get {
+            deliveryLock.lock()
+            defer { deliveryLock.unlock() }
+            return delivered
+        }
+        set {
+            deliveryLock.lock()
+            delivered = newValue
+            deliveryLock.unlock()
+        }
+    }
 
     static func reset() {
         statusCode = 200
         headers = [:]
         chunks = []
+        failure = nil
         chunksDelivered = 0
     }
 
-    private var cancelled = false
+    private let stateLock = NSLock()
+    private var stopped = false
+    private var cancelled: Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return stopped
+    }
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
         guard let client = client else { return }
+        let chunks = Self.chunks
+        let failure = Self.failure
         let response = HTTPURLResponse(
             url: request.url!,
             statusCode: Self.statusCode,
             httpVersion: "HTTP/1.1",
             headerFields: Self.headers
         )!
-        client.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-
-        for chunk in Self.chunks {
-            if cancelled { return }
-            client.urlProtocol(self, didLoad: chunk)
-            Self.chunksDelivered += 1
-            Thread.sleep(forTimeInterval: 0.01)
-        }
-
-        if !cancelled {
-            client.urlProtocolDidFinishLoading(self)
+        DispatchQueue.global().async {
+            guard !self.cancelled else { return }
+            client.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            for chunk in chunks {
+                if self.cancelled { return }
+                client.urlProtocol(self, didLoad: chunk)
+                Self.chunksDelivered += 1
+                Thread.sleep(forTimeInterval: 0.01)
+            }
+            if failure != nil { Thread.sleep(forTimeInterval: 0.05) }
+            guard !self.cancelled else { return }
+            if let error = failure { client.urlProtocol(self, didFailWithError: error) }
+            else { client.urlProtocolDidFinishLoading(self) }
         }
     }
 
     override func stopLoading() {
-        cancelled = true
+        stateLock.lock()
+        stopped = true
+        stateLock.unlock()
     }
 }
 
@@ -356,8 +462,6 @@ final class BlockingStubURLProtocol: URLProtocol, @unchecked Sendable {
         deliverInitialByte = true
     }
 
-    private var cancelled = false
-
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
@@ -375,15 +479,10 @@ final class BlockingStubURLProtocol: URLProtocol, @unchecked Sendable {
             client.urlProtocol(self, didLoad: Data([0x7B]))
         }
 
-        if Self.blockBodyForever {
-            while !cancelled { Thread.sleep(forTimeInterval: 0.05) }
-            return
-        }
+        if Self.blockBodyForever { return }
 
         client.urlProtocolDidFinishLoading(self)
     }
 
-    override func stopLoading() {
-        cancelled = true
-    }
+    override func stopLoading() {}
 }
